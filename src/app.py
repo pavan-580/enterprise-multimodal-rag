@@ -1,15 +1,16 @@
 import sys
+import tempfile
 from pathlib import Path
 
 import streamlit as st
 
+
+# Add project root to Python path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.rag_pipeline import RAGPipeline
-# -----------------------------
-# Page configuration
-# -----------------------------
+
 
 st.set_page_config(
     page_title="Enterprise Multimodal RAG",
@@ -17,96 +18,146 @@ st.set_page_config(
     layout="wide"
 )
 
-
-# -----------------------------
-# Title
-# -----------------------------
-
 st.title("📚 Enterprise Multimodal RAG System")
 
 st.write(
-    "Ask questions about the Enterprise Operations Report "
-    "using grounded retrieval."
+    "Upload a PDF containing text, tables, or images "
+    "and ask questions about its content."
 )
 
 
-# -----------------------------
-# Load RAG pipeline
-# -----------------------------
+# --------------------------------------------------
+# PDF Upload
+# --------------------------------------------------
 
-PDF_PATH = "documents/Enterprise_Operations_Report.pdf"
-
-@st.cache_resource
-def load_pipeline():
-    return RAGPipeline(PDF_PATH)
-
-
-pipeline = load_pipeline()
-
-
-# -----------------------------
-# Question input
-# -----------------------------
-
-question = st.text_input(
-    "Ask a question",
-    placeholder="Example: How many high-priority cases were resolved?"
+uploaded_file = st.file_uploader(
+    "Upload a PDF document",
+    type=["pdf"]
 )
 
 
-# -----------------------------
-# Ask button
-# -----------------------------
+if uploaded_file is not None:
 
-if st.button("Ask Question"):
+    st.success(f"Uploaded: {uploaded_file.name}")
 
-    if not question.strip():
+    # Create a temporary file for the uploaded PDF
+    with tempfile.NamedTemporaryFile(
+        delete=False,
+        suffix=".pdf"
+    ) as temp_file:
 
-        st.warning("Please enter a question.")
+        temp_file.write(uploaded_file.getbuffer())
+        pdf_path = temp_file.name
 
-    else:
 
-        with st.spinner("Searching the enterprise document..."):
+    # --------------------------------------------------
+    # Process PDF
+    # --------------------------------------------------
 
-            answer, sources = pipeline.answer(question)
+    if st.button("Process PDF"):
 
-        # -----------------------------
-        # Answer
-        # -----------------------------
+        with st.spinner(
+            "Processing PDF. Extracting text, tables and images..."
+        ):
 
-        st.subheader("Answer")
+            try:
+                pipeline = RAGPipeline(pdf_path)
 
-        st.success(answer)
+                st.session_state["pipeline"] = pipeline
+                st.session_state["document_name"] = uploaded_file.name
 
-        # -----------------------------
-        # Sources
-        # -----------------------------
-
-        st.subheader("Sources")
-
-        if sources:
-
-            seen = set()
-
-            for source in sources:
-
-                key = (
-                    source["source"],
-                    source["page"],
-                    source["type"]
+                st.success(
+                    "PDF processed successfully. "
+                    "You can now ask questions."
                 )
 
-                if key in seen:
-                    continue
+            except Exception as error:
 
-                seen.add(key)
-
-                st.write(
-                    f"📄 **{source['source']}** | "
-                    f"Page **{source['page']}** | "
-                    f"Type: **{source['type']}**"
+                st.error(
+                    "Unable to process the PDF."
                 )
+
+                st.exception(error)
+
+
+# --------------------------------------------------
+# Question Answering
+# --------------------------------------------------
+
+if "pipeline" in st.session_state:
+
+    st.divider()
+
+    st.subheader(
+        f"Ask questions about: "
+        f"{st.session_state['document_name']}"
+    )
+
+    question = st.text_input(
+        "Your question",
+        placeholder="Example: What was the highest revenue?"
+    )
+
+
+    if st.button("Ask Question"):
+
+        if not question.strip():
+
+            st.warning("Please enter a question.")
 
         else:
 
-            st.info("No sources available.")
+            pipeline = st.session_state["pipeline"]
+
+            with st.spinner(
+                "Searching relevant content..."
+            ):
+
+                answer, sources = pipeline.answer(
+                    question
+                )
+
+
+            # --------------------------------------------------
+            # Answer
+            # --------------------------------------------------
+
+            st.subheader("Answer")
+
+            st.success(answer)
+
+
+            # --------------------------------------------------
+            # Sources
+            # --------------------------------------------------
+
+            st.subheader("Sources")
+
+            if sources:
+
+                seen = set()
+
+                for source in sources:
+
+                    key = (
+                        source.get("source"),
+                        source.get("page"),
+                        source.get("type")
+                    )
+
+                    if key in seen:
+                        continue
+
+                    seen.add(key)
+
+                    st.write(
+                        f"📄 **{source.get('source')}** | "
+                        f"Page **{source.get('page')}** | "
+                        f"Type: **{source.get('type')}**"
+                    )
+
+            else:
+
+                st.info(
+                    "No sources were available."
+                )
