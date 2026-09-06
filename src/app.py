@@ -40,14 +40,18 @@ if uploaded_file is not None:
 
     st.success(f"Uploaded: {uploaded_file.name}")
 
-    # Create a temporary file for the uploaded PDF
-    with tempfile.NamedTemporaryFile(
-        delete=False,
-        suffix=".pdf"
-    ) as temp_file:
+    # Create a temporary directory
+    temp_dir = Path(tempfile.mkdtemp())
 
+    # Keep the original uploaded filename
+    safe_filename = Path(uploaded_file.name).name
+
+    # Create the PDF path using the original filename
+    pdf_path = temp_dir / safe_filename
+
+    # Save the uploaded PDF
+    with open(pdf_path, "wb") as temp_file:
         temp_file.write(uploaded_file.getbuffer())
-        pdf_path = temp_file.name
 
 
     # --------------------------------------------------
